@@ -8,6 +8,7 @@ import dotenv
 import json
 import re
 from datetime import datetime
+from constants import TOKEN_ADDRESS
 dotenv.load_dotenv()
 
 app = FastAPI()
@@ -126,10 +127,100 @@ async def verify_claim_endpoint(request: ClaimCheckRequest):
 
 
 """ MARKET CREATION """
-# @app.post("/create-market", response_model=CreateMarketResponse)
-# async def create_market(request: CreateMarketRequest):
-#     """ Create a new market """
-#     pass
+class CreateMarketRequest(BaseModel):
+    claim_to_verify: str
+    creator_wallet_address: str
+
+class CreateMarketResponse(BaseModel):
+    market_id: str
+    claim_to_verify: str
+    created_at: datetime
+
+@app.post("/create-market", response_model=CreateMarketResponse)
+async def create_market(request: CreateMarketRequest):
+    """Create a new market"""
+    try:
+        # Create market in database
+        result = supabase.table("markets").insert({
+            "claim_to_verify": request.claim_to_verify,
+            "creator_wallet_address": request.creator_wallet_address,
+            "created_at": datetime.now().isoformat(),
+            "resolved_at": None,
+            "disbursed_at": None,
+            "result_boolean": None,
+            "result_source": None,
+            "result_explanation": None
+        }).execute()
+
+        created_market = result.data[0]
+        print("inside create_market, created_market", created_market)
+
+        # Also place the first bet (TRUE)
+        await place_bet(PlaceBetRequest(
+            market_id=created_market["id"],
+            wallet_address=request.creator_wallet_address,
+            token=TOKEN_ADDRESS,
+            amount=1000000,
+            side=True
+        ))
+
+        return CreateMarketResponse(
+            market_id=created_market["id"],
+            claim_to_verify=created_market["claim_to_verify"],
+            created_at=datetime.fromisoformat(created_market["created_at"])
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+""" BETTING """
+class PlaceBetRequest(BaseModel):
+    market_id: str
+    wallet_address: str
+    amount: float
+    side: bool  # True for "yes", False for "no"
+
+class PlaceBetResponse(BaseModel):
+    bet_id: str
+    market_id: str
+    wallet_address: str
+    amount: float
+    side: bool
+    created_at: datetime
+
+@app.post("/place-bet", response_model=PlaceBetResponse)
+async def place_bet(request: PlaceBetRequest):
+    """Place a bet on a market"""
+    try:
+        # Get market details
+        market = supabase.table("markets").select("*").eq("id", request.market_id).execute()
+        if not market.data:
+            raise HTTPException(status_code=404, detail="Market not found")
+
+        market = market.data[0]
+
+        # Create bet in database
+        result = supabase.table("bets").insert({
+            "market_id": request.market_id,
+            "wallet_address": request.wallet_address,
+            "amount": request.amount,
+            "side": request.side,
+            "created_at": datetime.now().isoformat()
+        }).execute()
+
+        created_bet = result.data[0]
+
+        return PlaceBetResponse(
+            bet_id=created_bet["id"],
+            market_id=created_bet["market_id"],
+            wallet_address=created_bet["wallet_address"],
+            amount=created_bet["amount"],
+            side=created_bet["side"],
+            created_at=datetime.fromisoformat(created_bet["created_at"])
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 """ MARKET RESOLUTION -- CALCULATION + DISBURSEMENT """
