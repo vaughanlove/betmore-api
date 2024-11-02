@@ -91,6 +91,17 @@ async def verify_claim(claim: str) -> tuple[bool, Optional[str]]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error verifying claim: {str(e)}")
 
+
+async def verify_claim_wrapper(claim: str) -> tuple[bool, Optional[str], Optional[str]]:
+    # is_true, source, explanation = await verify_claim(claim)
+
+    from bet_script import perplexity_resolver
+    response = await perplexity_resolver(claim)
+    is_true, source, explanation = response.result, response.source, response.justification
+    print("Resolved the claim:", claim, "to be", is_true, "with source", source, "and explanation", explanation)
+    return is_true, source, explanation
+
+
 @app.post("/verify-claim", response_model=ClaimCheckResponse)
 async def verify_claim_endpoint(request: ClaimCheckRequest):
     """
@@ -100,7 +111,7 @@ async def verify_claim_endpoint(request: ClaimCheckRequest):
     """
     try:
         claim = extract_claim_from_query(request.query)
-        is_true, source, explanation = await verify_claim(claim)
+        is_true, source, explanation = await verify_claim_wrapper(claim)
 
         return ClaimCheckResponse(
             claim_to_verify=claim,
@@ -136,7 +147,7 @@ async def calculate_winners(market_id: str) -> List[MarketWinner]:
 
     # call the above verify_claim endpoint on the Market Claim
     claim_to_verify = market["claim_to_verify"]
-    is_true, source, explanation = await verify_claim(claim_to_verify)
+    is_true, source, explanation = await verify_claim_wrapper(claim_to_verify)
 
     # winners are the people whose bets match `is_true`
     bets = supabase.table("bets").select("*").eq("market_id", market_id).execute().data

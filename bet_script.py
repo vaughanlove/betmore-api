@@ -28,7 +28,7 @@ class BetResolvedContext(BaseModel):
     result: bool
     justification: str
 
-def restructure_output(raw_json_str: str)->BetResolvedContext:
+def restructure_output(raw_json_str: str) ->BetResolvedContext:
     client = OpenAI(api_key=OPENAI_API_KEY)
     completion = client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
@@ -41,7 +41,7 @@ def restructure_output(raw_json_str: str)->BetResolvedContext:
     return completion
 
 
-def perplexity_resolver(bet_statment: str) -> BetResolvedContext:
+async def perplexity_resolver(bet_statment: str) -> BetResolvedContext:
     client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url="https://api.perplexity.ai")
     messages = [
         {
@@ -69,5 +69,5 @@ class BetRequest(BaseModel):
     bet_statement: str
 
 @app.get("/check-market-result")
-def read_item(bet_request: BetRequest) -> BetResolvedContext:
-    return perplexity_resolver(bet_request.bet_statement)
+async def check_market_result(bet_request: BetRequest) -> BetResolvedContext:
+    return await perplexity_resolver(bet_request.bet_statement)
