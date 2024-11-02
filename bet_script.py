@@ -28,10 +28,11 @@ class BetResolvedContext(BaseModel):
     result: bool
     justification: str
 
-def restructure_output(raw_json_str: str) ->BetResolvedContext:
+def restructure_output(raw_json_str: str) -> BetResolvedContext:
     client = OpenAI(api_key=OPENAI_API_KEY)
+
     completion = client.beta.chat.completions.parse(
-        model="gpt-4o-2024-08-06",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are an expert at structured data extraction. You will be given unstructured or semi-structured JSON and should convert it into the given structure."},
             {"role": "user", "content": raw_json_str}
