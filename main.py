@@ -11,7 +11,9 @@ dotenv.load_dotenv()
 
 app = FastAPI()
 client = OpenAI()
-
+# Create Supabase client singleton
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_API_KEY"))
+MARKET_WALLET_ADDRESS = "mock wallet address"  # TODO: add our crossmint
 
 """ MARKET RESOLUTION -- VERIFICATION"""
 
@@ -130,9 +132,6 @@ async def resolve_market(market_id: str):
 # Create an endpoint to calculate the winners
 async def calculate_winners(market_id: str) -> List[MarketWinner]:
     """ For a single market, call the verify_claim endpoint and return the list of {winners + amount won} """
-    # query the market from Supabase markets table, using our .env API key
-    supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_API_KEY"))
-
     market = supabase.table("markets").select("*").eq("id", market_id).execute().data[0]
 
     # call the above verify_claim endpoint on the Market Claim
@@ -151,14 +150,28 @@ async def calculate_winners(market_id: str) -> List[MarketWinner]:
     # return the list of {winners + amount won}
     return winners
 
+async def send_crossmint_txn(from_address: str, to_address: str, amount: float):
+    """ TODO (vaughan) """
+    pass
 
-async def disburse_winnings(market_id: str, winners: List[MarketWinner]):
+
+async def disburse_winnings(market_id: str, winners: List[MarketWinner]) -> bool:
     """ For a single market, disburse the winnings to the winners """
+    market = supabase.table("markets").select("*").eq("id", market_id).execute().data[0]
+
+    # if already resolved, log + return
+    if market["resolved_at"]:
+        print(f"Market {market_id} already resolved")
+        return False
+
     # for each winner, send their winnings from our Crossmint wallet to their Crossmint wallet
+    for winner in winners:
+        await send_crossmint_txn(MARKET_WALLET_ADDRESS, winner.winner_wallet_address, winner.winning_amount)
 
     # mark market as resolved in Supabase markets table (todo: transaction)
-
-    return
+    if os.getenv("MOCK_RESOLVE_MARKET_DB_WRITES", "true") == "false":
+        supabase.table("markets").update({"resolved_at": datetime.now()}).eq("id", market_id).execute()
+    return True
 
 
 if __name__ == "__main__":
