@@ -12,24 +12,26 @@ dotenv.load_dotenv()
 app = FastAPI()
 client = OpenAI()
 
-""" WAGER RESOLUTION -- VERIFICATION"""
-class FactCheckRequest(BaseModel):
+
+""" MARKET RESOLUTION -- VERIFICATION"""
+
+class ClaimCheckRequest(BaseModel):
     query: str
 
-class FactCheckResponse(BaseModel):
-    fact_to_verify: str
+class ClaimCheckResponse(BaseModel):
+    claim_to_verify: str
     source_to_verify: Optional[str]
     boolean_result: bool
     explanation: Optional[str]
 
-def extract_fact_from_query(query: str) -> str:
-    """Extract the main fact from the user query."""
+def extract_claim_from_query(query: str) -> str:
+    """Extract the main claim from the user query."""
     cleaned_query = re.sub(r'^(i bet that|is it true that|did you know that)\s+', '', query.lower())
     return cleaned_query
 
-async def verify_claim(fact: str) -> tuple[bool, Optional[str]]:
-    """Verify a fact using OpenAI's API."""
-    if os.getenv("MOCK_verify_claim") == "true":
+async def verify_claim(claim: str) -> tuple[bool, Optional[str]]:
+    """Verify a claim using OpenAI's API."""
+    if os.getenv("MOCK_VERIFY_CLAIM") == "true":
         return True, "example.com", "Mock explanation"
 
     try:
@@ -39,21 +41,21 @@ async def verify_claim(fact: str) -> tuple[bool, Optional[str]]:
                 "type": "function",
                 "function": {
                     "name": "verify_claim_and_provide_source",
-                    "description": "Verify if a given fact is true or false and provide a source",
+                    "description": "Verify if a given claim is true or false and provide a source",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "is_true": {
                                 "type": "boolean",
-                                "description": "Whether the fact is true or false"
+                                "description": "Whether the claim is true or false"
                             },
                             "source_url": {
                                 "type": "string",
-                                "description": "URL of the source that verifies this fact"
+                                "description": "URL of the source that verifies this claim"
                             },
                             "explanation": {
                                 "type": "string",
-                                "description": "Brief explanation of why the fact is true or false"
+                                "description": "Brief explanation of why the claim is true or false"
                             }
                         },
                         "required": ["is_true", "explanation"]
@@ -67,11 +69,11 @@ async def verify_claim(fact: str) -> tuple[bool, Optional[str]]:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a fact-checking assistant. Verify the given fact and provide a source if possible. Always respond using the verify_claim_and_provide_source function."
+                    "content": "You are a claim-checking assistant. Verify the given claim and provide a source if possible. Always respond using the verify_claim_and_provide_source function."
                 },
                 {
                     "role": "user",
-                    "content": f"Please verify this fact: {fact}"
+                    "content": f"Please verify this claim: {claim}"
                 }
             ],
             tools=tools,
@@ -85,21 +87,21 @@ async def verify_claim(fact: str) -> tuple[bool, Optional[str]]:
         return result.get('is_true', False), result.get('source_url'), result.get('explanation')
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error verifying fact: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error verifying claim: {str(e)}")
 
-@app.post("/verify-fact", response_model=FactCheckResponse)
-async def verify_claim_endpoint(request: FactCheckRequest):
+@app.post("/verify-claim", response_model=ClaimCheckResponse)
+async def verify_claim_endpoint(request: ClaimCheckRequest):
     """
-    Endpoint to verify facts from user queries.
+    Endpoint to verify claims from user queries.
 
     Example query: "I bet that the New York Times started publishing in 1800"
     """
     try:
-        fact = extract_fact_from_query(request.query)
-        is_true, source, explanation = await verify_claim(fact)
+        claim = extract_claim_from_query(request.query)
+        is_true, source, explanation = await verify_claim(claim)
 
-        return FactCheckResponse(
-            fact_to_verify=fact,
+        return ClaimCheckResponse(
+            claim_to_verify=claim,
             source_to_verify=source,
             boolean_result=is_true,
             explanation=explanation
@@ -109,54 +111,54 @@ async def verify_claim_endpoint(request: FactCheckRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-""" WAGER RESOLUTION -- CALCULATION + DISBURSEMENT """
-class WagerWinner(BaseModel):
+""" MARKET RESOLUTION -- CALCULATION + DISBURSEMENT """
+
+class MarketWinner(BaseModel):
     winner_wallet_address: str
     winning_amount: float
 
-class ResolveWagerResponse(BaseModel):
-    winners: List[WagerWinner]
+class ResolveMarketResponse(BaseModel):
+    winners: List[MarketWinner]
 
-@app.post("/resolve-wager", response_model=ResolveWagerResponse)
-async def resolve_wager(wager_id: str):
-    """ For a single wager, resolve the wager by calculating the winners and disbursing the winnings """
-    winners = await calculate_winners(wager_id)
-    await disburse_winnings(wager_id, winners)
-    return ResolveWagerResponse(winners=winners)
+@app.post("/resolve-market", response_model=ResolveMarketResponse)
+async def resolve_market(market_id: str):
+    """ For a single market, resolve the market by calculating the winners and disbursing the winnings """
+    winners = await calculate_winners(market_id)
+    await disburse_winnings(market_id, winners)
+    return ResolveMarketResponse(winners=winners)
 
 # Create an endpoint to calculate the winners
-async def calculate_winners(wager_id: str) -> List[WagerWinner]:
-    """ For a single wager, call the verify_claim endpoint and return the list of {winners + amount won} """
-    # query the wager from Supabase wagers table, using our .env API key
+async def calculate_winners(market_id: str) -> List[MarketWinner]:
+    """ For a single market, call the verify_claim endpoint and return the list of {winners + amount won} """
+    # query the market from Supabase markets table, using our .env API key
     supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_API_KEY"))
 
-    wager = supabase.table("wagers").select("*").eq("id", wager_id).execute().data[0]
+    market = supabase.table("markets").select("*").eq("id", market_id).execute().data[0]
 
-    # call the above verify_claim endpoint on the Wager Fact
-    fact_to_verify = wager["claim_to_verify"]
-    is_true, source, explanation = await verify_claim(fact_to_verify)
+    # call the above verify_claim endpoint on the Market Claim
+    claim_to_verify = market["claim_to_verify"]
+    is_true, source, explanation = await verify_claim(claim_to_verify)
 
     # winners are the people whose bets match `is_true`
-    bets = supabase.table("bets").select("*").eq("wager_id", wager_id).execute().data
-    winners = supabase.table("bets").select("*").eq("wager_id", wager_id).eq("side", is_true).execute().data
+    bets = supabase.table("bets").select("*").eq("market_id", market_id).execute().data
+    winners = supabase.table("bets").select("*").eq("market_id", market_id).eq("side", is_true).execute().data
 
-    # find the list of winners, assign them their winnings equally from the Wager pool
+    # find the list of winners, assign them their winnings equally from the Market pool
     total_pool = sum([bet["amount"] for bet in bets])
     win_amount = total_pool / len(winners)
-    winners = [WagerWinner(winner_wallet_address=winner["wallet_address"], winning_amount=win_amount) for winner in winners]
+    winners = [MarketWinner(winner_wallet_address=winner["wallet_address"], winning_amount=win_amount) for winner in winners]
 
     # return the list of {winners + amount won}
     return winners
 
 
-async def disburse_winnings(wager_id: str, winners: List[WagerWinner]):
-    """ For a single wager, disburse the winnings to the winners """
+async def disburse_winnings(market_id: str, winners: List[MarketWinner]):
+    """ For a single market, disburse the winnings to the winners """
     # for each winner, send their winnings from our Crossmint wallet to their Crossmint wallet
 
-    # mark wager as resolved in Supabase wagers table (todo: transaction)
+    # mark market as resolved in Supabase markets table (todo: transaction)
 
     return
-
 
 
 if __name__ == "__main__":
