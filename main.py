@@ -221,13 +221,17 @@ async def place_bet(request: PlaceBetRequest):
 
         created_bet = result.data[0]
 
+        # Use datetime.fromisoformat() with string cleanup
+        timestamp_str = created_bet["created_at"].replace('Z', '+00:00')
+        created_at = datetime.fromisoformat(timestamp_str)
+
         return PlaceBetResponse(
             bet_id=created_bet["id"],
             market_id=created_bet["market_id"],
             wallet_address=created_bet["wallet_address"],
             amount=created_bet["amount"],
             side=created_bet["side"],
-            created_at=datetime.fromisoformat(created_bet["created_at"])
+            created_at=created_at
         )
 
     except Exception as e:
@@ -245,6 +249,8 @@ class ResolveMarketRequest(BaseModel):
 
 class ResolveMarketResponse(BaseModel):
     winners: List[MarketWinner]
+    source: str
+    explanation: str
 
 @app.post("/resolve-market", response_model=ResolveMarketResponse)
 async def resolve_market_endpoint(request: ResolveMarketRequest):
@@ -252,9 +258,9 @@ async def resolve_market_endpoint(request: ResolveMarketRequest):
     # First resolve the market
     await resolve_market(request.market_id)
     # Then calculate and disburse winnings
-    winners = await calculate_winners(request.market_id)
+    winners, source, explanation = await calculate_winners(request.market_id)
     await disburse_winnings(request.market_id, winners)
-    return ResolveMarketResponse(winners=winners)
+    return ResolveMarketResponse(winners=winners, source=source, explanation=explanation)
 
 # Create a function to resolve a market
 async def resolve_market(market_id: str) -> bool:
@@ -279,10 +285,12 @@ async def resolve_market(market_id: str) -> bool:
 
 
 # Create a function to calculate the winners
-async def calculate_winners(market_id: str) -> List[MarketWinner]:
+async def calculate_winners(market_id: str) -> tuple[List[MarketWinner], str, str]:
     """ For a single market, call the verify_claim endpoint and return the list of {winners + amount won} """
     market = supabase.table("markets").select("*").eq("id", market_id).execute().data[0]
     is_true = market["result_boolean"]
+    source = market["result_source"]
+    explanation = market["result_explanation"]
 
     # winners are the people whose bets match `is_true`
     bets = supabase.table("bets").select("*").eq("market_id", market_id).execute().data
@@ -290,11 +298,14 @@ async def calculate_winners(market_id: str) -> List[MarketWinner]:
 
     # find the list of winners, assign them their winnings equally from the Market pool
     total_pool = sum([bet["amount"] for bet in bets])
-    win_amount = total_pool / len(winners)
+    if len(winners) == 0:
+        win_amount = total_pool / len(bets)
+    else:
+        win_amount = total_pool / len(winners)
     winners = [MarketWinner(winner_wallet_address=winner["wallet_address"], winning_amount=win_amount) for winner in winners]
 
     # return the list of {winners + amount won}
-    return winners
+    return winners, source, explanation
 
 
 async def send_crossmint_txn(from_address: str, to_address: str, amount: float):

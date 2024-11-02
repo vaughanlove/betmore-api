@@ -28,11 +28,13 @@ async def test():
             side=bet["side"]
         ))
 
+    # market_id = "9740f271-b328-4ba2-8a2f-7b16fddaedea"
+
     resolve_market_result = await resolve_market(market_id)
     print("resolve_market_result", resolve_market_result)
 
-    winners = await calculate_winners(market_id)
-    print(winners)
+    winners, source, explanation = await calculate_winners(market_id)
+    print("CALCULATE_WINNERS", winners)
 
     disbursement_success = await disburse_winnings(market_id, winners)
     print(disbursement_success)
@@ -50,3 +52,16 @@ if __name__ == "__main__":
 
     import asyncio
     asyncio.run(test())
+
+
+# if __name__ == "__main__":
+#     import requests
+
+#     url = "https://svc.sandbox.anon.com/actions/linkedin/getProfile"
+
+#     ANON_API_KEY = "anon_eIneN8pqYtIllHWb64WAOlpzGgoxNKEXGENzmzu2lMmUV3vAKs1PuqV7AIkk9qr/ep1s1MqZKo41RXhK"
+#     headers = {"Authorization": f"Bearer {ANON_API_KEY}"}
+
+#     response = requests.request("GET", url, headers=headers)
+
+#     print(response.text)
