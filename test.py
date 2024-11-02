@@ -29,13 +29,18 @@ async def test():
         ))
 
     resolve_market_result = await resolve_market(market_id)
-    print(resolve_market_result)
+    print("resolve_market_result", resolve_market_result)
 
     winners = await calculate_winners(market_id)
     print(winners)
 
     disbursement_success = await disburse_winnings(market_id, winners)
     print(disbursement_success)
+
+# Create an util using the Anon.com client to verify that User A is followed by User B on Twitter
+ANON_API_KEY = os.getenv("ANON_API_KEY")
+
+
 
 
 if __name__ == "__main__":

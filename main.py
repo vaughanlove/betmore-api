@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
 import os
@@ -12,6 +13,16 @@ from constants import TOKEN_ADDRESS
 dotenv.load_dotenv()
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
 client = OpenAI()
 # Create Supabase client singleton
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_API_KEY"))
@@ -229,19 +240,30 @@ class MarketWinner(BaseModel):
     winner_wallet_address: str
     winning_amount: float
 
+class ResolveMarketRequest(BaseModel):
+    market_id: str
+
 class ResolveMarketResponse(BaseModel):
     winners: List[MarketWinner]
 
 @app.post("/resolve-market", response_model=ResolveMarketResponse)
-async def resolve_market(market_id: str):
+async def resolve_market_endpoint(request: ResolveMarketRequest):
     """ For a single market, resolve the market by calculating the winners and disbursing the winnings """
-    winners = await calculate_winners(market_id)
-    await disburse_winnings(market_id, winners)
+    # First resolve the market
+    await resolve_market(request.market_id)
+    # Then calculate and disburse winnings
+    winners = await calculate_winners(request.market_id)
+    await disburse_winnings(request.market_id, winners)
     return ResolveMarketResponse(winners=winners)
 
 # Create a function to resolve a market
 async def resolve_market(market_id: str) -> bool:
     market = supabase.table("markets").select("*").eq("id", market_id).execute().data[0]
+
+    # If already resolved, log + return
+    if market["resolved_at"]:
+        print(f"Market {market_id} already resolved")
+        return False
 
     # call the above verify_claim endpoint on the Market Claim
     claim_to_verify = market["claim_to_verify"]
