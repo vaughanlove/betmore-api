@@ -7,6 +7,7 @@ from supabase import create_client
 import dotenv
 import json
 import re
+from datetime import datetime
 dotenv.load_dotenv()
 
 app = FastAPI()
@@ -98,7 +99,7 @@ async def verify_claim_wrapper(claim: str) -> tuple[bool, Optional[str], Optiona
     from bet_script import perplexity_resolver
     response = await perplexity_resolver(claim)
     is_true, source, explanation = response.result, response.source, response.justification
-    print("Resolved the claim:", claim, "to be", is_true, "with source", source, "and explanation", explanation)
+    print(f"\nResolved the claim: `{claim}` to be `{is_true}` with source `{source}` and explanation `{explanation}`\n")
     return is_true, source, explanation
 
 
@@ -124,6 +125,13 @@ async def verify_claim_endpoint(request: ClaimCheckRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+""" MARKET CREATION """
+# @app.post("/create-market", response_model=CreateMarketResponse)
+# async def create_market(request: CreateMarketRequest):
+#     """ Create a new market """
+#     pass
+
+
 """ MARKET RESOLUTION -- CALCULATION + DISBURSEMENT """
 
 class MarketWinner(BaseModel):
@@ -140,14 +148,28 @@ async def resolve_market(market_id: str):
     await disburse_winnings(market_id, winners)
     return ResolveMarketResponse(winners=winners)
 
-# Create an endpoint to calculate the winners
-async def calculate_winners(market_id: str) -> List[MarketWinner]:
-    """ For a single market, call the verify_claim endpoint and return the list of {winners + amount won} """
+# Create a function to resolve a market
+async def resolve_market(market_id: str) -> bool:
     market = supabase.table("markets").select("*").eq("id", market_id).execute().data[0]
 
     # call the above verify_claim endpoint on the Market Claim
     claim_to_verify = market["claim_to_verify"]
     is_true, source, explanation = await verify_claim_wrapper(claim_to_verify)
+
+    # Update the market with the result
+    supabase.table("markets").update({
+        "result_boolean": is_true,
+        "result_source": source,
+        "result_explanation": explanation,
+        "resolved_at": datetime.now().isoformat()
+    }).eq("id", market_id).execute()
+
+
+# Create a function to calculate the winners
+async def calculate_winners(market_id: str) -> List[MarketWinner]:
+    """ For a single market, call the verify_claim endpoint and return the list of {winners + amount won} """
+    market = supabase.table("markets").select("*").eq("id", market_id).execute().data[0]
+    is_true = market["result_boolean"]
 
     # winners are the people whose bets match `is_true`
     bets = supabase.table("bets").select("*").eq("market_id", market_id).execute().data
@@ -161,6 +183,7 @@ async def calculate_winners(market_id: str) -> List[MarketWinner]:
     # return the list of {winners + amount won}
     return winners
 
+
 async def send_crossmint_txn(from_address: str, to_address: str, amount: float):
     """ TODO (vaughan) """
     pass
@@ -171,8 +194,8 @@ async def disburse_winnings(market_id: str, winners: List[MarketWinner]) -> bool
     market = supabase.table("markets").select("*").eq("id", market_id).execute().data[0]
 
     # if already resolved, log + return
-    if market["resolved_at"]:
-        print(f"Market {market_id} already resolved")
+    if market["disbursed_at"]:
+        print(f"Market {market_id} already disbursed")
         return False
 
     # for each winner, send their winnings from our Crossmint wallet to their Crossmint wallet
@@ -180,8 +203,9 @@ async def disburse_winnings(market_id: str, winners: List[MarketWinner]) -> bool
         await send_crossmint_txn(MARKET_WALLET_ADDRESS, winner.winner_wallet_address, winner.winning_amount)
 
     # mark market as resolved in Supabase markets table (todo: transaction)
-    if os.getenv("MOCK_RESOLVE_MARKET_DB_WRITES", "true") == "false":
-        supabase.table("markets").update({"resolved_at": datetime.now()}).eq("id", market_id).execute()
+    supabase.table("markets").update({
+        "disbursed_at": datetime.now().isoformat()
+    }).eq("id", market_id).execute()
     return True
 
 

@@ -1,4 +1,4 @@
-from main import calculate_winners, disburse_winnings
+from main import calculate_winners, disburse_winnings, resolve_market
 from supabase import create_client
 from dotenv import load_dotenv
 import os
@@ -6,6 +6,8 @@ import os
 load_dotenv()
 
 async def test():
+    await resolve_market("1")
+
     winners = await calculate_winners("1")
     print(winners)
 
