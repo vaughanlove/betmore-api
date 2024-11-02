@@ -6,8 +6,8 @@ import os
 import dotenv
 dotenv.load_dotenv()
 
-PERPLEXITY_KEY = os.getenv("PERPLEXITY_KEY")
-OPEN_AI_KEY = os.getenv("OPEN_AI_KEY")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 SYSTEM_PROMPT = """
 You are an AI designed to verify and resolve bets based on factual information. Your task is to:
@@ -29,7 +29,7 @@ class BetResolvedContext(BaseModel):
     justification: str
 
 def restructure_output(raw_json_str: str)->BetResolvedContext:
-    client = OpenAI(api_key=OPEN_AI_KEY)
+    client = OpenAI(api_key=OPENAI_API_KEY)
     completion = client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
         messages=[
@@ -42,7 +42,7 @@ def restructure_output(raw_json_str: str)->BetResolvedContext:
 
 
 def perplexity_resolver(bet_statment: str) -> BetResolvedContext:
-    client = OpenAI(api_key=PERPLEXITY_KEY, base_url="https://api.perplexity.ai")
+    client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url="https://api.perplexity.ai")
     messages = [
         {
             "role": "system",
@@ -68,6 +68,6 @@ app = FastAPI()
 class BetRequest(BaseModel):
     bet_statement: str
 
-@app.get("/resolve_bet")
+@app.get("/check-market-result")
 def read_item(bet_request: BetRequest) -> BetResolvedContext:
     return perplexity_resolver(bet_request.bet_statement)
